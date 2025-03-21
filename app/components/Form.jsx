@@ -1,107 +1,106 @@
 "use client";
-
 import { useState } from "react";
 import axios from "axios";
-import ReactMarkdown from "react-markdown";
 
 export default function PromptForm() {
-  const [prompt, setPrompt] = useState("");
-  const [markdown, setMarkdown] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [recipientEmail, setRecipientEmail] = useState("");
-  const [sending, setSending] = useState(false);
+  const [state, setState] = useState({
+    prompt: "",
+    emailContent: "",
+    loading: false,
+    recipientEmail: "",
+    sending: false
+  });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
-    setMarkdown("");
+    setState(prev => ({...prev, loading: true, emailContent: ""}));
 
     try {
-      const response = await axios.post("api/generate-email", {
-        prompt: prompt,
+      const response = await axios.post("/api/generate-email", {
+        prompt: `Generate plain text business email about: ${state.prompt}`
       });
-      setMarkdown(response.data.markdown);
+      
+      setState(prev => ({
+        ...prev,
+        emailContent: response.data.emailContent
+      }));
     } catch (error) {
       console.error("Error generating email:", error);
     }
-    setLoading(false);
+    setState(prev => ({...prev, loading: false}));
   };
 
   const handleSendEmail = async () => {
-    if (!recipientEmail) {
-      alert("Please provide a recipient email.");
+    if (!state.recipientEmail.includes('@')) {
+      alert("Please enter a valid email address");
       return;
     }
 
-    setSending(true);
-
+    setState(prev => ({...prev, sending: true}));
     try {
-      const response = await axios.post("/api/send-email", {
-        to: recipientEmail,
-        subject: "Generated Email",
-        text: markdown, // Sending the markdown content as the email body
+      await axios.post("/api/send-email", {
+        to: state.recipientEmail,
+        subject: "Project Deadline Update",
+        text: state.emailContent
       });
-
-      if (response.data.success) {
-        alert("Email sent successfully!");
-      } else {
-        alert("Error sending email.");
-      }
+      alert("Email sent successfully!");
     } catch (error) {
       console.error("Error sending email:", error);
-      alert("Error sending email.");
+      alert("Failed to send email");
     }
-
-    setSending(false);
+    setState(prev => ({...prev, sending: false}));
   };
 
   return (
-    <div className="max-w-xl mx-auto p-6 bg-white text-black shadow-md rounded-lg  ">
-      <h2 className="text-xl font-bold mb-4">Generate and Send an Email</h2>
+    <div className="max-w-xl mx-auto p-6 text-black bg-white shadow-md rounded-lg">
+      <h2 className="text-xl font-bold mb-4">Email Generator</h2>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <textarea
           className="w-full p-2 border rounded"
-          placeholder="Enter your prompt..."
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          rows={4}
+          placeholder="Describe the email purpose..."
+          value={state.prompt}
+          onChange={(e) => setState(prev => ({...prev, prompt: e.target.value}))}
+          rows={3}
           required
         />
         <button
           type="submit"
-          className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-          disabled={loading}
+          className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 disabled:opacity-50"
+          disabled={state.loading}
         >
-          {loading ? "Generating..." : "Generate Email"}
+          {state.loading ? "Generating..." : "Generate Email"}
         </button>
       </form>
 
-      {markdown && (
-        <div className="mt-6 p-4 border rounded bg-gray-100">
-          <h3 className="font-bold mb-2">Generated Email:</h3>
-          <ReactMarkdown>{markdown}</ReactMarkdown>
-        </div>
-      )}
-
-      {/* Input for recipient email and button to send email */}
-      {markdown && (
-        <div className="mt-6">
-          <input
-            type="email"
-            className="w-full p-2 border rounded mb-4"
-            placeholder="Enter recipient's email"
-            value={recipientEmail}
-            onChange={(e) => setRecipientEmail(e.target.value)}
-            required
-          />
-          <button
-            onClick={handleSendEmail}
-            className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
-            disabled={sending}
-          >
-            {sending ? "Sending..." : "Send Email"}
-          </button>
+      {state.emailContent && (
+        <div className="mt-6 space-y-4">
+          <div className="p-4 border rounded bg-gray-50">
+            <h3 className="font-bold mb-2">Email Draft:</h3>
+            <textarea
+              className="w-full p-2 border rounded min-h-[200px]"
+              value={state.emailContent}
+              onChange={(e) => setState(prev => ({...prev, emailContent: e.target.value}))}
+            />
+          </div>
+          
+          <div className="space-y-2">
+            <input
+              type="email"
+              className="w-full p-2 border rounded"
+              placeholder="recipient@company.com"
+              value={state.recipientEmail}
+              onChange={(e) => setState(prev => ({...prev, recipientEmail: e.target.value}))}
+              required
+            />
+            <button
+              onClick={handleSendEmail}
+              className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 w-full disabled:opacity-50"
+              disabled={state.sending}
+            >
+              {state.sending ? "Sending..." : "Send Email"}
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -1,50 +1,118 @@
-import fetch from 'node-fetch'; // Ensure you're using node-fetch for HTTP requests
+import fetch from 'node-fetch';
 
-const HUGGING_FACE_API_KEY = process.env.HUGGING_FACE_API_KEY; // Make sure to set this in your .env.local
-const MODEL = 'gpt2'; // You can change this to any model you'd like to use, like gpt-3 or others
+const HUGGING_FACE_API_KEY = process.env.HUGGING_FACE_API_KEY;
 
 export async function POST(req) {
   try {
-    const { prompt } = await req.json(); // Get the prompt from the request body
-    if (!prompt) {
+    // Validate request payload
+    const contentType = req.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
       return new Response(
-        JSON.stringify({ error: 'Prompt is required' }),
+        JSON.stringify({ error: 'Invalid content type' }),
         { status: 400 }
       );
     }
-    console.log('Prompt:', prompt);
 
-    // Send the request to the Hugging Face API
-    const response = await fetch(`https://api-inference.huggingface.co/models/${MODEL}`, {
+    const { prompt } = await req.json();
+    
+    if (!prompt || prompt.trim().length < 10) {
+      return new Response(
+        JSON.stringify({ error: 'Prompt must be at least 10 characters' }),
+        { status: 400 }
+      );
+    }
+
+    // Construct optimized prompt
+    const cleanedPrompt = `Generate formal business email about: ${prompt.substring(0, 200)}
+      - Structure: Subject line, salutation, body, closing
+      - Tone: Professional
+      - Format: Plain text only
+      - Length: 3-5 short paragraphs
+      Example:
+      Subject: Project Timeline Update
+      Dear HR Team,
+      [Content...]
+      Best regards,
+      [Your Name]`;
+
+    // API call with timeout
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+    const response = await fetch('https://api-inference.huggingface.co/models/google/flan-t5-base', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${HUGGING_FACE_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        inputs: `Write an email in markdown format for:\n\n"${prompt}"`, // Pass the prompt to the Hugging Face model
+        inputs: cleanedPrompt,
+        parameters: {
+          max_length: 500,
+          temperature: 0.7,
+          do_sample: true
+        }
       }),
+      signal: controller.signal
     });
+    clearTimeout(timeout);
 
-    const data = await response.json(); // Parse the response
-
+    // Handle HTTP errors
     if (!response.ok) {
-      // Handle failed response from Hugging Face API
-      throw new Error(data?.error || 'Failed to generate response from Hugging Face API');
+      const errorData = await response.json();
+      console.error('HF API Error:', errorData);
+      return new Response(
+        JSON.stringify({ 
+          error: 'Email generation service unavailable',
+          details: errorData.error || 'Model loading or API limit reached'
+        }),
+        { status: 503 }
+      );
     }
 
-    // Extract the generated text
-    const markdown = data[0]?.generated_text || 'Failed to generate email.';
-    
+    // Validate response format
+    const data = await response.json();
+    if (!Array.isArray(data) || !data[0]?.generated_text) {
+      return new Response(
+        JSON.stringify({ error: 'Unexpected response format' }),
+        { status: 500 }
+      );
+    }
+
+    // Clean and format output
+    const emailContent = data[0].generated_text
+      .replace(/(Subject:).*/gi, (match) => match.substring(0, 100)) // Limit subject length
+      .replace(/\[Your Name\]/g, 'Project Team')
+      .trim();
+
     return new Response(
-      JSON.stringify({ markdown }),
-      { status: 200 }
+      JSON.stringify({ emailContent }),
+      { 
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store'
+        }
+      }
     );
+
   } catch (error) {
-    console.error('Error generating email:', error);
+    console.error('Server Error:', error);
+    const errorMessage = error.name === 'AbortError' 
+      ? 'Request timed out' 
+      : 'Internal server error';
+      
     return new Response(
-      JSON.stringify({ error: error.message }),
-      { status: 500 }
+      JSON.stringify({ 
+        error: errorMessage,
+        solution: 'Please try a shorter/simpler prompt'
+      }),
+      { 
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
     );
   }
 }
