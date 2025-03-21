@@ -1,10 +1,10 @@
 import React from 'react'
-import PromptForm from './components/Form'
+import EmailGenerator from './components/Form'
 
 const page = () => {
   return (
     <div className='p-6 min-h-screen'>
-      <PromptForm></PromptForm>
+      <EmailGenerator></EmailGenerator>
     </div>
   )
 }
