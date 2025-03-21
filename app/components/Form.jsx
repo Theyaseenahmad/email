@@ -56,7 +56,7 @@ export default function PromptForm() {
   };
 
   return (
-    <div className="max-w-xl mx-auto p-6 bg-white text-black shadow-md rounded-lg min-h-screen p-4">
+    <div className="max-w-xl mx-auto p-6 bg-white text-black shadow-md rounded-lg  ">
       <h2 className="text-xl font-bold mb-4">Generate and Send an Email</h2>
 
       <form onSubmit={handleSubmit} className="space-y-4">

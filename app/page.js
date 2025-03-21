@@ -3,7 +3,7 @@ import PromptForm from './components/Form'
 
 const page = () => {
   return (
-    <div>
+    <div className='p-6 min-h-screen'>
       <PromptForm></PromptForm>
     </div>
   )
