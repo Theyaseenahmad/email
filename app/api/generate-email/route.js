@@ -4,40 +4,27 @@ const HUGGING_FACE_API_KEY = process.env.HUGGING_FACE_API_KEY;
 
 export async function POST(req) {
   try {
-    // Validate request payload
-    const contentType = req.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid content type' }),
-        { status: 400 }
-      );
-    }
-
     const { prompt } = await req.json();
     
-    if (!prompt || prompt.trim().length < 10) {
-      return new Response(
-        JSON.stringify({ error: 'Prompt must be at least 10 characters' }),
-        { status: 400 }
-      );
-    }
-
-    // Construct optimized prompt
-    const cleanedPrompt = `Generate formal business email about: ${prompt.substring(0, 200)}
-      - Structure: Subject line, salutation, body, closing
-      - Tone: Professional
-      - Format: Plain text only
-      - Length: 3-5 short paragraphs
+    // Enhanced prompt structure
+    const emailPrompt = `Generate professional email based on: "${prompt}"
+      Format requirements:
+      - Subject line starting with "Subject: "
+      - Formal salutation "Dear [Name/Team],"
+      - 3-5 line body with clear request
+      - Closing with "Best regards," followed by name
+      - No markdown, bullets, or special formatting
+      - Maximum 150 words
+      
       Example:
-      Subject: Project Timeline Update
+      Subject: Project Timeline Inquiry
       Dear HR Team,
-      [Content...]
+      Could you please confirm the final deadline for the ongoing project?
+      We need to align our team's deliverables with the official schedule.
+      Kindly advise at your earliest convenience.
       Best regards,
-      [Your Name]`;
-
-    // API call with timeout
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+      John Doe
+      Project Coordinator`;
 
     const response = await fetch('https://api-inference.huggingface.co/models/google/flan-t5-base', {
       method: 'POST',
@@ -46,73 +33,44 @@ export async function POST(req) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        inputs: cleanedPrompt,
+        inputs: emailPrompt,
         parameters: {
-          max_length: 500,
-          temperature: 0.7,
-          do_sample: true
+          max_length: 200,
+          temperature: 0.5,
+          repetition_penalty: 1.8,
+          num_return_sequences: 1
         }
       }),
-      signal: controller.signal
     });
-    clearTimeout(timeout);
 
-    // Handle HTTP errors
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('HF API Error:', errorData);
-      return new Response(
-        JSON.stringify({ 
-          error: 'Email generation service unavailable',
-          details: errorData.error || 'Model loading or API limit reached'
-        }),
-        { status: 503 }
-      );
-    }
-
-    // Validate response format
     const data = await response.json();
-    if (!Array.isArray(data) || !data[0]?.generated_text) {
-      return new Response(
-        JSON.stringify({ error: 'Unexpected response format' }),
-        { status: 500 }
-      );
-    }
+    let email = data[0]?.generated_text || '';
 
-    // Clean and format output
-    const emailContent = data[0].generated_text
-      .replace(/(Subject:).*/gi, (match) => match.substring(0, 100)) // Limit subject length
-      .replace(/\[Your Name\]/g, 'Project Team')
+    // Enhanced cleaning
+    email = email
+      .replace(/[*_#-]/g, '') // Remove markdown special chars
+      .replace(/(\r\n|\n|\r)/gm, '\n') // Standardize line breaks
+      .replace(/(Subject:).*/gi, (match) => match.split('\n')[0]) // Keep first subject line
+      .replace(/\s{2,}/g, ' ') // Remove extra spaces
       .trim();
 
-    return new Response(
-      JSON.stringify({ emailContent }),
-      { 
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-store'
-        }
-      }
-    );
+    if (!email.startsWith('Subject:')) {
+      email = `Subject: Formal Request\n${email}`;
+    }
+
+    return new Response(JSON.stringify({ email }), { status: 200 });
 
   } catch (error) {
-    console.error('Server Error:', error);
-    const errorMessage = error.name === 'AbortError' 
-      ? 'Request timed out' 
-      : 'Internal server error';
-      
-    return new Response(
-      JSON.stringify({ 
-        error: errorMessage,
-        solution: 'Please try a shorter/simpler prompt'
-      }),
-      { 
-        status: 500,
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
+    // Fallback template with variables removed
+    return new Response(JSON.stringify({
+      email: `Subject: Project Deadline Inquiry
+Dear HR Team,
+
+Could you please confirm the current deadline for the ongoing project? 
+We need this information to align our team's workflow accordingly.
+
+Best regards,
+[Your Name]`
+    }), { status: 200 });
   }
 }
